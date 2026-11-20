@@ -365,27 +365,10 @@ function drawLasers(t, dt) {
 }
 
 /* =========================================================
-   HUD: title, timer, speed
+   HUD: warp speed
    ========================================================= */
-(function buildTitle() {
-  const el = document.getElementById("title");
-  el.append(document.createTextNode("emer3lds worl"));
-  for (let i = 0; i < 40; i++) {
-    const s = document.createElement("span");
-    s.className = "d";
-    s.textContent = "d";
-    s.setAttribute("aria-hidden", "true");
-    s.style.animationDelay = `${-i * 0.07}s`;
-    el.append(s);
-  }
-})();
-const timerEl = document.getElementById("timer");
 const speedEl = document.getElementById("speed");
-const t0 = performance.now();
-function updateHud(t) {
-  const ms = Math.floor(t - t0);
-  const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, r = ms % 1000;
-  timerEl.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}:${String(r).padStart(3, "0")}`;
+function updateHud() {
   speedEl.textContent = `${warp.toFixed(2)}x`;
 }
 

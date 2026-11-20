@@ -52,28 +52,15 @@ body::after {
 .hud a:hover { color: #7ef9ff; }
 .hud a small { font-weight: 400; color: var(--dim); }
 
-/* emer3lds worlddddd — the d's run right off the screen */
-.title {
-  margin: 0;
-  font: 700 15px var(--mono);
-  white-space: nowrap;
-  overflow: visible;
-  position: relative;
-  right: -34px; /* let it touch the edge */
-}
-.title .d { display: inline-block; animation: dbob 1.4s ease-in-out infinite; }
-
-.timer { font-variant-numeric: tabular-nums; }
 .hint { color: var(--dim); font-size: 12px; animation: blink 1.6s steps(2) infinite; }
 #speed { font-variant-numeric: tabular-nums; min-width: 4.2em; text-align: right; }
 
 @keyframes blink { 50% { opacity: .25; } }
-@keyframes dbob { 50% { translate: 0 3px; } }
 
 @media (max-width: 640px) {
   .hud { padding: 16px; font-size: 12px; }
   .hint { display: none; }
-  .title { font-size: 12px; right: -16px; }
+  .bottom { justify-content: flex-end; }
 }
 
 @media (prefers-reduced-motion: reduce) {
