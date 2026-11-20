@@ -288,8 +288,13 @@ function updateHead(t, dt) {
   rot.vx += ((tx - rot.x) * k - rot.vx * damp) * s;
   rot.y += rot.vy * s;
   rot.x += rot.vx * s;
-  head.rotation.set(rot.x, rot.y, Math.sin(t * 0.0011) * 0.04);
-  head.position.y = Math.sin(t * 0.0016) * 0.6;
+  // while warping, ride a smooth up-and-down wave (fades in and out with the warp speed)
+  const surf = reduceMotion ? 0 : clamp((warp - 1) / 5, 0, 1);
+  const wave = t * 0.0042;
+  const waveY = Math.sin(wave) * 8 * 0.32 * surf;  // up to ~a third of the head's height
+  const waveTilt = Math.cos(wave) * 0.16 * surf;   // nose dips going down, lifts going up
+  head.rotation.set(rot.x + waveTilt, rot.y, Math.sin(t * 0.0011) * 0.04 + Math.sin(wave * 0.5) * 0.05 * surf);
+  head.position.y = Math.sin(t * 0.0016) * 0.6 + waveY * headScale;
   // recoil while firing
   head.position.z = laser.firing ? -1.5 : 0;
 }
