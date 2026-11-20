@@ -1,115 +1,39 @@
 <!doctype html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>emer3lds world</title>
   <meta name="description" content="emer3lds worlddddddddddddd — a lil corner of the internet">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%98%85%3C/text%3E%3C/svg%3E">
-  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=2">
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
+  </script>
 </head>
 <body>
-  <!-- ===== top menu bar ===== -->
-  <div class="menubar">
-    <div class="wrap menubar-in">
-      <span class="logo">emer3lds動画<small>(β)</small></span>
-      <div class="search">
-        <button class="btn">コメント</button>
-        <input class="search-in" placeholder="かんたん検索">
-        <button class="btn">検索</button>
-        <button class="btn">マイリスト</button>
-      </div>
-      <nav class="menu">
-        <a href="#">トップ</a> | <a href="#" class="soon">blog</a> | <a href="#" class="soon">about</a> | <a href="#" class="soon">links</a>
-      </nav>
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <canvas id="head" aria-label="emer3ld's head, made of little glyphs, looking at your cursor"></canvas>
+  <canvas id="fx" aria-hidden="true"></canvas>
+
+  <header class="hud top">
+    <div class="left">
+      <span class="who">emer3ld</span>
+      <span class="sep"></span>
+      <a href="#" class="soon" title="coming soon">blog <small>(soon)</small></a>
     </div>
-  </div>
-  <div class="notice wrap">【お知らせ】 blogは準備中です (´・ω・`) ／ this site is under construction</div>
+    <h1 class="title" id="title" aria-label="emer3lds world"></h1>
+  </header>
 
-  <!-- ===== video title ===== -->
-  <div class="wrap">
-    <h1 class="vtitle" id="vtitle" aria-label="emer3lds world"></h1>
-    <div class="vmeta">
-      <canvas class="uploader-icon face" width="8" height="8"></canvas>
-      投稿者: <a href="#">emer3ld</a> ・ 投稿日時: 08/11/18 21:39 ・ <span class="cat">カテゴリ: VOCALOID</span>
-    </div>
-  </div>
+  <footer class="hud bottom">
+    <span class="timer" id="timer">00:00:000</span>
+    <span class="hint" id="hint">click to fire ✦</span>
+    <span class="right"><span>HOLD FOR WARP</span><span class="sep"></span><span id="speed">1.00x</span></span>
+  </footer>
 
-  <!-- ===== player + comment list ===== -->
-  <main class="wrap watch">
-    <section class="player">
-      <div class="player-head">
-        <span>emer3lds動画</span><span class="ph-right">コメント <b>ON</b></span>
-      </div>
-
-      <div class="screen" id="screen">
-        <!-- if you put a picture at art/screen.jpg it shows here instead of the dancing skin -->
-        <img class="screen-art" id="screenArt" src="art/screen.jpg" alt="">
-        <div class="stage" id="stage">
-          <div class="sparkles"></div>
-          <canvas class="skin" id="skin" title="emer3ld (click me!)"></canvas>
-          <div class="floor"></div>
-        </div>
-        <canvas id="danmaku" aria-hidden="true"></canvas>
-      </div>
-
-      <div class="controls">
-        <button class="cbtn play" id="play" aria-label="play/pause">❚❚</button>
-        <div class="seek" id="seek"><div class="seek-fill" id="seekFill"></div><div class="seek-knob" id="seekKnob"></div></div>
-        <span class="time"><span id="cur">0:00</span>/3:39</span>
-        <span class="vol">🔈<span class="vol-bar"><i></i></span></span>
-        <button class="cbtn toggle" id="toggle" aria-pressed="false">コメント非表示</button>
-      </div>
-
-      <form class="comment-bar" id="commentForm" autocomplete="off">
-        <input id="commentInput" maxlength="75" placeholder="コメントを入力してください (say hi!)">
-        <button class="btn post" type="submit">コメント</button>
-      </form>
-    </section>
-
-    <aside class="side">
-      <div class="counts">
-        <div><span>再生</span><b id="views">1,039,393</b></div>
-        <div><span>コメント</span><b id="count">93,939</b></div>
-        <div><span>マイリスト</span><b>39,390</b></div>
-      </div>
-      <div class="tabs">
-        <span class="on">コメント</span><span>投稿者</span><span>オススメ</span>
-      </div>
-      <div class="list-head"><span>再生時間</span><span>コメント</span><span>書込日時</span></div>
-      <div class="list" id="list"></div>
-      <div class="list-foot">↓ 自動スクロール</div>
-    </aside>
-  </main>
-
-  <!-- ===== tags + description ===== -->
-  <div class="wrap below">
-    <div class="tags">
-      <span class="tags-label">タグ</span>
-      <a href="#">VOCALOID</a><a href="#">emer3ld</a><a href="#">Minecraft</a><a href="#">殿堂入り</a><a href="#">神曲</a><a href="#">ここが噂の</a><a href="#">worlddddd</a>
-    </div>
-    <div class="desc">
-      <canvas class="desc-icon face" id="face" width="8" height="8" title="emer3ld (click me!)"></canvas>
-      <div>
-        <p class="desc-title">動画説明</p>
-        <p>はじめまして！emer3ldです。ここは私の小さなインターネットの片隅です (´∀｀)</p>
-        <p>welcome to my lil corner of the internet!! type a comment in the box and it'll fly across the video ✦ blog coming soon™</p>
-        <p class="desc-links">blog: <span class="soon">準備中</span> ／ about: <span class="soon">準備中</span></p>
-      </div>
-    </div>
-
-    <footer class="foot">
-      <div class="badges">
-        <span class="b88 b1">♥ VOCALOID</span>
-        <span class="b88 b2">NO AI ART</span>
-        <span class="b88 b3">BEST VIEWED<br>1024×768</span>
-        <span class="b88 b4">UNDER<br>CONSTRUCTION</span>
-        <span class="b88 b5">弾幕<br>ENJOYER</span>
-      </div>
-      <p class="copy">(C) emer3ld ・ ご意見・ご要望はコメントでどうぞ</p>
-    </footer>
-  </div>
-
-  <script src="main.js"></script>
+  <script type="module" src="main.js?v=2"></script>
 </body>
 </html>

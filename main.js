@@ -1,437 +1,426 @@
 /* =========================================================
-   emer3lds worlddddddddddddd
-   classic video-site page with niconico-style 弾幕 inside the player.
-   letters slip away from your cursor.
+   emer3lds worlddddddddddddd — v2
+   - emer3ld's minecraft head in 3D, drawn as a grid of little glyphs
+   - it turns to follow your cursor (flick fast and it spins)
+   - stars rush past; hold to warp
+   - every so often (or when you click) it fires rainbow lasers from its eyes
    ========================================================= */
+import * as THREE from "three";
 
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const rand = (a, b) => a + Math.random() * (b - a);
-const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
 
-/* ---------------- video screen: your own picture if present ---------------- */
-const screen = document.getElementById("screen");
-const screenArt = document.getElementById("screenArt");
-if (screenArt.complete && screenArt.naturalWidth) screen.classList.add("has-art");
-screenArt.addEventListener("load", () => screen.classList.add("has-art"));
+let W = innerWidth, H = innerHeight;
 
-/* ---------------- emer3ld's minecraft skin ----------------
-   we load the real skin file and draw it ourselves, so it's always your current skin.
-   (falls back to the skin as of nov 2026 if the lookup service is down) */
+function fit2d(canvas) {
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  return ctx;
+}
+
+/* ---------------- pointer / hold-to-warp / click-to-fire ---------------- */
+const pointer = { x: W / 2, y: H / 2, active: false, vx: 0, lastMove: 0 };
+let holding = false, holdStart = 0, warp = 1;
+
+addEventListener("pointermove", (e) => {
+  const now = performance.now();
+  const dt = Math.max(1, now - pointer.lastMove);
+  pointer.vx = (e.clientX - pointer.x) / dt; // px per ms
+  pointer.x = e.clientX; pointer.y = e.clientY;
+  pointer.active = true; pointer.lastMove = now;
+});
+addEventListener("pointerdown", (e) => {
+  if (e.target.closest("a")) return;
+  pointer.x = e.clientX; pointer.y = e.clientY; pointer.active = true; pointer.lastMove = performance.now();
+  holding = true; holdStart = performance.now();
+});
+addEventListener("pointerup", (e) => {
+  if (!holding) return;
+  holding = false;
+  if (performance.now() - holdStart < 250) fireLasers(); // a quick click fires
+});
+document.addEventListener("pointerleave", () => { pointer.active = false; holding = false; });
+
+/* =========================================================
+   1. stars rushing past
+   ========================================================= */
+const starCanvas = document.getElementById("stars");
+let sctx = fit2d(starCanvas);
+const STAR_COUNT = 650;
+const stars = Array.from({ length: STAR_COUNT }, () => newStar(true));
+function newStar(anyDepth) {
+  return {
+    x: rand(-1, 1), y: rand(-1, 1),
+    z: anyDepth ? rand(0.05, 1) : 1,
+    hue: Math.random() < 0.2 ? null : rand(0, 360), // some are white
+    size: rand(0.6, 1.6),
+  };
+}
+function drawStars(dt) {
+  const ctx = sctx;
+  ctx.fillStyle = "rgba(7, 6, 10, 0.55)"; // slight trails
+  ctx.fillRect(0, 0, W, H);
+  const cx = W / 2, cy = H / 2, f = Math.max(W, H) * 0.5;
+  const speed = (reduceMotion ? 0.00004 : 0.00016) * warp;
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  for (const s of stars) {
+    const pz = s.z;
+    s.z -= speed * dt;
+    if (s.z <= 0.02) { Object.assign(s, newStar(false)); continue; }
+    const x1 = cx + (s.x / s.z) * f, y1 = cy + (s.y / s.z) * f;
+    const tail = Math.min(pz + speed * 60 * (0.6 + warp * 0.5), 1.2);
+    const x0 = cx + (s.x / tail) * f, y0 = cy + (s.y / tail) * f;
+    if (x1 < -50 || x1 > W + 50 || y1 < -50 || y1 > H + 50) { Object.assign(s, newStar(false)); continue; }
+    const near = 1 - s.z;
+    const w = s.size * (0.5 + near * 2.4);
+    const a = Math.min(1, near * 1.4);
+    const col = s.hue === null ? `rgba(255,255,255,${a})` : `hsla(${s.hue},100%,65%,${a})`;
+    // chromatic split: a red and a cyan ghost either side of the streak
+    ctx.lineWidth = w;
+    ctx.strokeStyle = `rgba(255,40,90,${a * 0.5})`;
+    ctx.beginPath(); ctx.moveTo(x0 + 1.5, y0); ctx.lineTo(x1 + 1.5, y1); ctx.stroke();
+    ctx.strokeStyle = `rgba(40,220,255,${a * 0.5})`;
+    ctx.beginPath(); ctx.moveTo(x0 - 1.5, y0); ctx.lineTo(x1 - 1.5, y1); ctx.stroke();
+    ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    // little square head on the comet
+    ctx.fillStyle = col;
+    ctx.fillRect(x1 - w, y1 - w, w * 2, w * 2);
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+
+/* =========================================================
+   2. the head (three.js, rendered tiny, then redrawn as glyphs)
+   ========================================================= */
+const headCanvas = document.getElementById("head");
+let hctx = fit2d(headCanvas);
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: true });
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, W / H, 1, 1000);
+camera.position.set(0, 0, 60);
+const head = new THREE.Group();
+scene.add(head);
+
+let cell = 12, cols = 1, rows = 1, rt = null, pixels = null, headScale = 1;
+
+function layout() {
+  // cell size scales with the screen so the head is always ~40 glyphs wide
+  cell = clamp(Math.round(Math.min(W, H) / 62), 7, 18);
+  cols = Math.ceil(W / cell);
+  rows = Math.ceil(H / cell);
+  camera.aspect = W / H;
+  camera.updateProjectionMatrix();
+  rt?.dispose();
+  rt = new THREE.WebGLRenderTarget(cols, rows, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+  pixels = new Uint8Array(cols * rows * 4);
+  renderer.setSize(cols, rows, false);
+  // make the head big but always fully on screen (even mid-spin)
+  const visH = 2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+  const visW = visH * camera.aspect;
+  headScale = (Math.min(visH, visW) * 0.4) / 8;
+  head.scale.setScalar(headScale);
+}
+
+/* skin loading — always your current skin */
 const SKIN_FALLBACK = "https://textures.minecraft.net/texture/c4566214036a2e2a56e2d9aa10c8d03bff05ad54598351c8b33e013ffd2a0c57";
-const skin = { img: null, slim: false };
-
 async function loadSkin() {
   let url = SKIN_FALLBACK;
   try {
     const res = await fetch("https://playerdb.co/api/player/minecraft/emer3ld");
     const p = (await res.json()).data.player;
     const prop = p.properties.find((x) => x.name === "textures");
-    const tex = JSON.parse(atob(prop.value)).textures.SKIN;
-    url = tex.url.replace("http://", "https://");
-    skin.slim = tex.metadata?.model === "slim";
-  } catch (e) { /* use fallback */ }
+    url = JSON.parse(atob(prop.value)).textures.SKIN.url.replace("http://", "https://");
+  } catch (e) { /* fallback */ }
   const img = new Image();
+  img.crossOrigin = "anonymous";
   img.src = url;
   await img.decode();
-  skin.img = img;
-  drawFaces();
+  return img;
 }
 
-function drawFaces() {
-  for (const c of document.querySelectorAll("canvas.face")) {
-    const fctx = c.getContext("2d");
-    fctx.imageSmoothingEnabled = false;
-    fctx.clearRect(0, 0, 8, 8);
-    fctx.drawImage(skin.img, 8, 8, 8, 8, 0, 0, 8, 8);   // face
-    fctx.drawImage(skin.img, 40, 8, 8, 8, 0, 0, 8, 8);  // hat layer
+function faceTex(img, sx, sy) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 8;
+  c.getContext("2d").drawImage(img, sx, sy, 8, 8, 0, 0, 8, 8);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = t.minFilter = THREE.NearestFilter;
+  t.generateMipmaps = false;
+  return t;
+}
+
+// a bit of fake lighting per side so it reads as 3D
+const SHADE = { px: 0.78, nx: 0.78, py: 1.0, ny: 0.55, pz: 0.96, nz: 0.7 };
+function buildHead(img) {
+  // box face order: +x, -x, +y, -y, +z, -z
+  // minecraft head: right side (0,8) faces -x, left side (16,8) faces +x
+  const base = [[16, 8, "px"], [0, 8, "nx"], [8, 0, "py"], [16, 0, "ny"], [8, 8, "pz"], [24, 8, "nz"]];
+  const mats = (offset, overlay) => base.map(([sx, sy, k]) => new THREE.MeshBasicMaterial({
+    map: faceTex(img, sx + offset, sy),
+    color: new THREE.Color().setScalar(SHADE[k]),
+    transparent: overlay,
+    alphaTest: overlay ? 0.5 : 0,
+  }));
+  head.add(new THREE.Mesh(new THREE.BoxGeometry(8, 8, 8), mats(0, false)));
+  head.add(new THREE.Mesh(new THREE.BoxGeometry(9, 9, 9), mats(32, true))); // hat layer
+}
+
+/* follow the cursor with a springy, slightly over-excited turn */
+const rot = { x: 0, y: 0, vx: 0, vy: 0 };
+let spinKick = 0;
+function updateHead(t, dt) {
+  const s = dt / 1000;
+  let tx = 0, ty = 0;
+  const idle = !pointer.active || t - pointer.lastMove > 4000;
+  if (!idle) {
+    const nx = (pointer.x / W) * 2 - 1, ny = (pointer.y / H) * 2 - 1;
+    ty = nx * 0.95;
+    tx = ny * 0.62;
+  } else {
+    ty = Math.sin(t * 0.0005) * 0.5;
+    tx = Math.sin(t * 0.0007) * 0.18;
+  }
+  // flick the mouse fast sideways → the head spins
+  if (!reduceMotion && Math.abs(pointer.vx) > 2.2 && t - pointer.lastMove < 40) {
+    rot.vy += Math.sign(pointer.vx) * Math.min(Math.abs(pointer.vx), 6) * 3.2;
+    pointer.vx = 0;
+  }
+  // unwind full turns so it keeps spinning forward instead of reversing
+  while (rot.y - ty > Math.PI) rot.y -= Math.PI * 2;
+  while (rot.y - ty < -Math.PI) rot.y += Math.PI * 2;
+  const k = 48, damp = 7.5;
+  rot.vy += ((ty - rot.y) * k - rot.vy * damp) * s;
+  rot.vx += ((tx - rot.x) * k - rot.vx * damp) * s;
+  rot.y += rot.vy * s;
+  rot.x += rot.vx * s;
+  head.rotation.set(rot.x, rot.y, Math.sin(t * 0.0011) * 0.04);
+  head.position.y = Math.sin(t * 0.0016) * 0.6;
+  // recoil while firing
+  head.position.z = laser.firing ? -1.5 : 0;
+}
+
+/* glyph shapes, picked by brightness — with a 4x4 bayer pattern so bands break up like dither */
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => (v / 16 - 0.5) * 0.18);
+function drawGlyphs(t) {
+  const ctx = hctx;
+  ctx.clearRect(0, 0, W, H);
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 0);
+  renderer.clear();
+  renderer.render(scene, camera);
+  renderer.readRenderTargetPixels(rt, 0, 0, cols, rows, pixels);
+  renderer.setRenderTarget(null);
+
+  const g = cell, pad = Math.max(1, Math.round(g * 0.12)), inner = g - pad * 2;
+  const shake = laser.firing && !reduceMotion ? rand(-1.5, 1.5) : 0;
+  ctx.lineWidth = Math.max(1, g * 0.12);
+  for (let row = 0; row < rows; row++) {
+    const y = (rows - 1 - row) * g + shake; // pixels come back bottom-up
+    for (let col = 0; col < cols; col++) {
+      const i = (row * cols + col) * 4;
+      if (pixels[i + 3] < 128) continue;
+      let r = pixels[i], gr = pixels[i + 1], b = pixels[i + 2];
+      const x = col * g + shake;
+      const lum = (0.299 * r + 0.587 * gr + 0.114 * b) / 255 + BAYER[(row & 3) * 4 + (col & 3)];
+      // lift very dark pixels a bit so they still show on black
+      if (lum < 0.12) { r = Math.max(r, 70); gr = Math.max(gr, 62); b = Math.max(b, 90); }
+      const color = `rgb(${r},${gr},${b})`;
+      ctx.fillStyle = color;
+      ctx.strokeStyle = color;
+      if (lum > 0.62) {
+        ctx.fillRect(x + pad, y + pad, inner, inner);                       // ■
+      } else if (lum > 0.46) {
+        ctx.beginPath(); ctx.arc(x + g / 2, y + g / 2, inner * 0.45, 0, Math.PI * 2); ctx.fill(); // ●
+      } else if (lum > 0.3) {
+        ctx.strokeRect(x + pad + 0.5, y + pad + 0.5, inner - 1, inner - 1);  // □
+      } else {
+        const m = g / 2, a = inner * 0.42;                                  // +
+        ctx.beginPath();
+        ctx.moveTo(x + m - a, y + m); ctx.lineTo(x + m + a, y + m);
+        ctx.moveTo(x + m, y + m - a); ctx.lineTo(x + m, y + m + a);
+        ctx.stroke();
+      }
+    }
   }
 }
 
-// little dance in the video screen
-const dancer = document.getElementById("skin");
-const dctx = dancer.getContext("2d");
-const PX = 8; // canvas pixels per skin pixel
-dancer.width = 24 * PX; dancer.height = 36 * PX;
+/* =========================================================
+   3. rainbow eye lasers
+   ========================================================= */
+const fxCanvas = document.getElementById("fx");
+let fctx = fit2d(fxCanvas);
+// eye centers on the face, in head units (the head is 8 wide, centered on 0)
+const EYES = [new THREE.Vector3(-2.5, -0.5, 4.6), new THREE.Vector3(2.5, -0.5, 4.6)];
+const laser = { start: -1e9, firing: false, charging: false, target: { x: 0, y: 0 } };
+const CHARGE = 450, FIRE = 1400;
+let sparks = [];
+let nextAuto = performance.now() + rand(4000, 6000);
 
-function part(base, over, x, y, w, h, px, py, angle) {
-  // base/over = [sx, sy] in the skin file; x,y,w,h = where on the 24x36 grid; px,py = pivot
-  dctx.save();
-  dctx.translate(px * PX, py * PX);
-  dctx.rotate(angle);
-  dctx.translate(-px * PX, -py * PX);
-  dctx.drawImage(skin.img, base[0], base[1], w, h, x * PX, y * PX, w * PX, h * PX);
-  if (over) dctx.drawImage(skin.img, over[0], over[1], w, h, x * PX, y * PX, w * PX, h * PX);
-  dctx.restore();
+function fireLasers() {
+  const now = performance.now();
+  if (now - laser.start < CHARGE + FIRE) return;
+  laser.start = now;
+  nextAuto = now + rand(7000, 12000);
+  const old = document.title;
+  document.title = "PEW PEW";
+  setTimeout(() => (document.title = old), 1600);
 }
 
-let danceT = 0;
-function drawDancer(dt) {
-  if (!skin.img) return;
-  if (playing && !reduceMotion) danceT += dt;
-  const old = skin.img.height === 32; // very old skins have no separate left limbs
-  const aw = skin.slim ? 3 : 4;
-  const beat = (danceT / 460) * Math.PI;
-  const bar = Math.floor(danceT / (460 * 8)) % 2; // every 8 beats switch moves
-  const bounce = -Math.abs(Math.sin(beat)) * 1.2;
-  const sway = Math.sin(beat / 2) * 0.07;
-
-  dctx.imageSmoothingEnabled = false;
-  dctx.clearRect(0, 0, dancer.width, dancer.height);
-  dctx.save();
-  dctx.translate(12 * PX, 34 * PX);
-  dctx.rotate(sway);
-  dctx.translate(-12 * PX, -34 * PX + bounce * PX);
-
-  // legs
-  const leg = Math.sin(beat) * 0.28;
-  part([4, 20], [4, 36], 8, 22, 4, 12, 10, 22, leg);
-  part(old ? [4, 20] : [20, 52], old ? null : [4, 52], 12, 22, 4, 12, 14, 22, -leg);
-  // body
-  part([20, 20], [20, 36], 8, 10, 8, 12, 12, 22, 0);
-  // arms: wave side to side, then hands up in the air
-  const armR = bar ? -2.7 + Math.sin(beat * 2) * 0.35 : Math.sin(beat) * 0.9 - 0.2;
-  const armL = bar ? 2.7 - Math.sin(beat * 2) * 0.35 : -Math.sin(beat) * 0.9 + 0.2;
-  part([44, 20], [44, 36], 8 - aw, 10, aw, 12, 8 - aw / 2, 11, armR);
-  part(old ? [44, 20] : [36, 52], old ? null : [52, 52], 16, 10, aw, 12, 16 + aw / 2, 11, armL);
-  // head
-  part([8, 8], [40, 8], 8, 2, 8, 8, 12, 10, Math.sin(beat) * 0.15);
-  dctx.restore();
+function eyeScreen(v) {
+  const p = v.clone();
+  head.localToWorld(p);
+  p.project(camera);
+  return { x: (p.x * 0.5 + 0.5) * W, y: (-p.y * 0.5 + 0.5) * H };
 }
 
-loadSkin();
+function drawLasers(t, dt) {
+  const ctx = fctx;
+  ctx.clearRect(0, 0, W, H);
+  const age = t - laser.start;
+  laser.charging = age >= 0 && age < CHARGE;
+  laser.firing = age >= CHARGE && age < CHARGE + FIRE;
+  const eyes = EYES.map(eyeScreen);
 
-/* ---------------- title: emer3lds worlddddddd… ---------------- */
+  if (laser.charging || laser.firing) {
+    // where do the beams go? toward the cursor if there is one, else straight out of the face
+    let tx, ty;
+    if (pointer.active && Math.hypot(pointer.x - W / 2, pointer.y - H / 2) > 30) {
+      tx = pointer.x; ty = pointer.y;
+    } else {
+      const mid = { x: (eyes[0].x + eyes[1].x) / 2, y: (eyes[0].y + eyes[1].y) / 2 };
+      const fwd = new THREE.Vector3(0, -0.5, 30); head.localToWorld(fwd); fwd.project(camera);
+      tx = (fwd.x * 0.5 + 0.5) * W; ty = (-fwd.y * 0.5 + 0.5) * H;
+      if (Math.hypot(tx - mid.x, ty - mid.y) < 20) { tx = mid.x + 1; ty = H + 100; }
+    }
+    laser.target = { x: tx, y: ty };
+    ctx.globalCompositeOperation = "lighter";
+    for (const [n, e] of eyes.entries()) {
+      // charge-up glow
+      const glow = laser.charging ? age / CHARGE : 1;
+      const rg = cell * (1.2 + glow * 2.2) * (laser.firing ? 1 + Math.sin(t * 0.06) * 0.15 : 1);
+      const grad = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, rg);
+      grad.addColorStop(0, "rgba(255,255,255,0.95)");
+      grad.addColorStop(0.35, `hsla(${(t * 0.4 + n * 180) % 360},100%,65%,0.7)`);
+      grad.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(e.x, e.y, rg, 0, Math.PI * 2); ctx.fill();
+      if (!laser.firing) continue;
+
+      // beam: from the eye, through the target, out to the edge of the screen
+      const fireAge = age - CHARGE;
+      const dx = tx - e.x, dy = ty - e.y, len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const reach = Math.min(1, fireAge / 140) * Math.hypot(W, H) * 1.2;
+      const ex = e.x + ux * reach, ey = e.y + uy * reach;
+      const fade = fireAge > FIRE - 300 ? (FIRE - fireAge) / 300 : 1;
+      const width = cell * (0.9 + Math.sin(t * 0.08 + n) * 0.25) * fade;
+      const nxp = -uy, nyp = ux; // perpendicular
+      // six rainbow bands side by side, hues sliding over time
+      for (let b = 0; b < 6; b++) {
+        const off = (b - 2.5) * width * 0.38;
+        ctx.strokeStyle = `hsla(${(t * 0.5 + b * 60) % 360},100%,60%,${0.75 * fade})`;
+        ctx.lineWidth = width * 0.5;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(e.x + nxp * off, e.y + nyp * off);
+        ctx.lineTo(ex + nxp * off * 2.2, ey + nyp * off * 2.2);
+        ctx.stroke();
+      }
+      // white-hot core
+      ctx.strokeStyle = `rgba(255,255,255,${0.9 * fade})`;
+      ctx.lineWidth = width * 0.35;
+      ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(ex, ey); ctx.stroke();
+      // glyph squares riding along the beam
+      const step = cell * 1.6;
+      for (let d = (fireAge * 0.9) % step; d < reach; d += step) {
+        const px = e.x + ux * d, py = e.y + uy * d;
+        ctx.fillStyle = `hsla(${(d * 0.6 - t * 0.6) % 360},100%,70%,${0.9 * fade})`;
+        const sz = cell * 0.7;
+        ctx.fillRect(Math.round(px / cell) * cell + (cell - sz) / 2, Math.round(py / cell) * cell + (cell - sz) / 2, sz, sz);
+      }
+      // sparks where it hits the cursor
+      if (pointer.active && !reduceMotion && Math.random() < 0.6) {
+        for (let k = 0; k < 2; k++) sparks.push({ x: tx, y: ty, vx: rand(-0.5, 0.5), vy: rand(-0.6, 0.3), life: 1, hue: rand(0, 360) });
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  // sparks
+  ctx.globalCompositeOperation = "lighter";
+  for (const s of sparks) {
+    s.x += s.vx * dt; s.y += s.vy * dt; s.vy += 0.0012 * dt; s.life -= dt / 600;
+    ctx.fillStyle = `hsla(${s.hue},100%,65%,${Math.max(0, s.life)})`;
+    const sz = cell * 0.5 * s.life;
+    ctx.fillRect(s.x - sz / 2, s.y - sz / 2, sz, sz);
+  }
+  ctx.globalCompositeOperation = "source-over";
+  sparks = sparks.filter((s) => s.life > 0);
+}
+
+/* =========================================================
+   HUD: title, timer, speed
+   ========================================================= */
 (function buildTitle() {
-  const el = document.getElementById("vtitle");
+  const el = document.getElementById("title");
   el.append(document.createTextNode("emer3lds worl"));
-  const N = 24;
-  for (let i = 0; i < N; i++) {
-    const p = i / (N - 1);
+  for (let i = 0; i < 40; i++) {
     const s = document.createElement("span");
     s.className = "d";
     s.textContent = "d";
     s.setAttribute("aria-hidden", "true");
-    s.style.fontSize = `${1 + p * p * 2.2}em`;
-    s.style.transform = `rotate(${p * p * 28}deg) translateY(${p * p * 0.25}em)`;
-    s.style.marginLeft = `${-p * 0.06}em`;
-    s.style.animationDelay = `${-i * 0.09}s`;
-    s.style.setProperty("--drop", `${2 + p * 8}px`);
-    if (p > 0.55) s.style.color = pick(["#222", "#0055aa", "#ff6600", "#39c5bb"]);
+    s.style.animationDelay = `${-i * 0.07}s`;
     el.append(s);
   }
 })();
-
-/* ---------------- 弾幕 ---------------- */
-const canvas = document.getElementById("danmaku");
-const ctx = canvas.getContext("2d");
-const NICO_FONT = `"MS PGothic", "ＭＳ Ｐゴシック", "MS UI Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", sans-serif`;
-const NICO_COLORS = {
-  white: "#FFFFFF", red: "#FF0000", pink: "#FF8080", orange: "#FFC000", yellow: "#FFFF00",
-  green: "#00FF00", cyan: "#00FFFF", blue: "#0000FF", purple: "#C000FF", black: "#000000",
-};
-
-// what you'd see scrolling over a popular vocaloid video
-const POOL = [
-  "うぽつ", "うぽつです", "わこつ", "神曲", "神曲きた", "神調教", "調教うますぎ", "ミクの声かわいい",
-  "ミクさんマジ天使", "ここすき", "ここ好き", "←わかる", "←それな", "↑わかる",
-  "初見", "初見です", "初見ですが中毒になりました", "毎日聴いてる", "リピート止まらん",
-  "中毒性やばい", "鳥肌", "鳥肌立った", "サビ！！", "サビくるぞ", "前奏で神曲確定",
-  "イントロ神", "ベースかっこよすぎ", "この音すき", "PV神", "絵師様神",
-  "歌ってみた待機", "踊ってみた待機", "弾いてみた待機", "カラオケ入って", "殿堂入りおめでとう！",
-  "伝説入りおめでとう！！", "ミリオンおめでとう！！", "伝説の始まり",
-  "2008年から来ました", "10年後も聴いてる人→", "懐かしすぎる", "ニコ動黄金期",
-  "定期的に聴きに来る", "久しぶりに来た", "おかえり", "ただいま", "今聴いても新しい",
-  "語彙力消失", "エモい", "最高かよ", "天才かよ", "うp主天才", "P天才か",
-  "なにこれすごい", "すげえええええ", "うおおおおおお", "かっけええええ", "かわいいいいい",
-  "ミクううううう", "ネギ", "ネギ振れ", "39！", "サンキュー！",
-  "泣いた", "なんか泣ける", "心にくる",
-  "マイリス余裕でした", "保存した", "毎朝これで起きてる",
-  "ここで画面止めてみ", "弾幕職人乙", "コメ多すぎて見えないｗ",
-  "マイクラのスキンかわいい", "四角いｗｗｗ", "カクカク踊ってて草", "emer3ldさんだ！",
-  "このサイト好き", "blogまだ？", "ここが噂の", "worlddddddd", "dが多いｗｗｗ",
-  "who's here in 2026", "kawaii", "masterpiece", "love from brazil", "VOCALOID SUPREMACY",
-  "wwwwwwww", "ｗｗｗｗｗ", "ｗｗｗ", "草", "大草原", "8888888888", "８８８８８",
-  "キタ━━━(ﾟ∀ﾟ)━━━!!", "(´；ω；｀)", "(´・ω・`)", "( ˘ω˘ )", "( ﾟдﾟ)", "Σ(ﾟдﾟ；)",
-  "(*´ω｀*)", "＼(^o^)／", "orz", "( ´∀｀)", "(｀・ω・´)", "ヽ(°▽、°)ﾉ", "_(:3」∠)_", "(っ´ω`c)",
-];
-const WALLS = [
-  { text: "うおおおおおおおおおおおおお", color: "white" },
-  { text: "8888888888888888888", color: "yellow" },
-  { text: "ｗｗｗｗｗｗｗｗｗｗｗｗｗｗ", color: "white" },
-  { text: "キタ━━━━(ﾟ∀ﾟ)━━━━!!", color: "white" },
-];
-
-let W = 0, H = 0, medium = 24, laneH = 28, repelR = 40;
-let comments = [];
-let lanes = [];
-let playing = true;
-let commentsOn = true;
-
-function fit() {
-  const r = canvas.getBoundingClientRect();
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  W = r.width; H = r.height;
-  canvas.width = Math.round(W * dpr);
-  canvas.height = Math.round(H * dpr);
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  // niconico: medium text is 24px on a 384px-tall player
-  medium = H * 24 / 384;
-  laneH = medium * 1.12;
-  const n = Math.max(4, Math.floor(H / laneH));
-  lanes = Array.from({ length: n }, (_, i) => lanes[i] || null);
-  lanes.length = n;
-  repelR = H * 0.1;
-  // re-measure existing comments at the new size
-  for (const c of comments) measure(c);
-}
-new ResizeObserver(fit).observe(canvas);
-
-const SIZE_SCALE = { small: 15 / 24, medium: 1, big: 39 / 24 };
-
-function measure(c) {
-  c.size = medium * SIZE_SCALE[c.sizeName];
-  ctx.font = `600 ${c.size}px ${NICO_FONT}`;
-  let ox = 0;
-  for (const ch of c.chars) { ch.w = ctx.measureText(ch.ch).width; ch.ox = ox; ox += ch.w; }
-  c.width = ox;
+const timerEl = document.getElementById("timer");
+const speedEl = document.getElementById("speed");
+const t0 = performance.now();
+function updateHud(t) {
+  const ms = Math.floor(t - t0);
+  const m = Math.floor(ms / 60000), s = Math.floor(ms / 1000) % 60, r = ms % 1000;
+  timerEl.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}:${String(r).padStart(3, "0")}`;
+  speedEl.textContent = `${warp.toFixed(2)}x`;
 }
 
-/* pointer in screen coordinates */
-const pointer = { x: 0, y: 0, inside: false };
-function track(e) {
-  const r = canvas.getBoundingClientRect();
-  pointer.x = e.clientX - r.left;
-  pointer.y = e.clientY - r.top;
-  pointer.inside = pointer.x >= -repelR && pointer.y >= -repelR && pointer.x <= r.width + repelR && pointer.y <= r.height + repelR;
-}
-window.addEventListener("pointermove", track);
-window.addEventListener("pointerdown", track);
-window.addEventListener("pointerup", (e) => { if (e.pointerType === "touch") pointer.inside = false; });
-document.addEventListener("pointerleave", () => { pointer.inside = false; });
-
-function spawn(text, opts = {}) {
-  const c = {
-    text,
-    sizeName: opts.size || "medium",
-    chars: [...text].map((ch) => ({ ch, w: 0, ox: 0, dx: 0, dy: 0, a: 1 })),
-    color: NICO_COLORS[opts.color] || "#FFFFFF",
-    mine: !!opts.mine,
-    type: opts.type || "naka", // naka = scrolling, ue = pinned top, shita = pinned bottom
-    life: 3000,
-    x: W, y: 0, speed: 0,
-  };
-  measure(c);
-  // every comment is on screen for 4 seconds, so long ones move faster
-  c.speed = (W + c.width) / 4000;
-
-  if (c.type === "ue" || c.type === "shita") {
-    const taken = new Set(comments.filter((o) => o.type === c.type).map((o) => o.slot));
-    let slot = 0;
-    while (taken.has(slot)) slot++;
-    c.slot = slot;
-    c.x = (W - c.width) / 2;
-    c.y = c.type === "ue" ? laneH * (slot + 0.5) : H - laneH * (slot + 0.5);
-  } else {
-    // first free lane from the top; if everything is full, overlap at random (like the real thing)
-    let lane = -1;
-    for (let i = 0; i < lanes.length; i++) {
-      const last = lanes[i];
-      if (!last) { lane = i; break; }
-      const tail = last.x + last.width;
-      if (tail < W - 6) {
-        const catchUp = c.speed > last.speed && (W - tail) / (c.speed - last.speed) < tail / last.speed;
-        if (!catchUp) { lane = i; break; }
-      }
-    }
-    if (lane < 0) lane = Math.floor(Math.random() * lanes.length);
-    lanes[lane] = c;
-    c.y = laneH * (lane + 0.5);
-  }
-  comments.push(c);
-  addRow(c);
-  return c;
-}
-
-function update(dt) {
-  const k = 1 - Math.exp(-dt * 0.018);
-  const R = repelR;
-  for (const c of comments) {
-    if (playing) {
-      if (c.type === "naka") c.x -= c.speed * dt;
-      else c.life -= dt;
-    }
-    for (const ch of c.chars) {
-      const bx = c.x + ch.ox + ch.w / 2, by = c.y;
-      let tx = 0, ty = 0, ta = 1;
-      if (pointer.inside) {
-        const ddx = bx - pointer.x, ddy = by - pointer.y;
-        const d = Math.hypot(ddx, ddy);
-        if (d < R) {
-          const nx = d > 0.5 ? ddx / d : 0, ny = d > 0.5 ? ddy / d : -1;
-          tx = pointer.x + nx * R - bx;
-          ty = pointer.y + ny * R - by;
-          ta = 0.2 + 0.8 * (d / R);
-        }
-      }
-      ch.dx += (tx - ch.dx) * k;
-      ch.dy += (ty - ch.dy) * k;
-      ch.a += (ta - ch.a) * k;
-    }
-  }
-  comments = comments.filter((c) => (c.type === "naka" ? c.x + c.width > -4 : c.life > 0));
-  const alive = new Set(comments);
-  lanes = lanes.map((c) => (c && alive.has(c) ? c : null));
-}
-
-function draw() {
-  ctx.clearRect(0, 0, W, H);
-  if (!commentsOn) return;
-  ctx.textBaseline = "middle";
-  ctx.lineJoin = "round";
-  for (const c of comments) {
-    ctx.font = `600 ${c.size}px ${NICO_FONT}`;
-    if (c.mine) {
-      ctx.globalAlpha = 1;
-      ctx.strokeStyle = "#FFFF00";
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(c.x - 2, c.y - c.size * 0.58, c.width + 4, c.size * 1.16);
-    }
-    ctx.lineWidth = Math.max(2, c.size * 0.1);
-    ctx.strokeStyle = c.color === "#000000" ? "rgba(255,255,255,0.5)" : "rgba(0,0,0,0.5)";
-    ctx.fillStyle = c.color;
-    for (const ch of c.chars) {
-      const x = c.x + ch.ox + ch.dx, y = c.y + ch.dy;
-      ctx.globalAlpha = ch.a;
-      ctx.strokeText(ch.ch, x, y);
-      ctx.fillText(ch.ch, x, y);
-    }
-  }
-  ctx.globalAlpha = 1;
-}
-
-function randomComment() {
-  const opts = {};
-  opts.color = Math.random() < 0.82 ? "white" : pick(["red", "pink", "orange", "yellow", "green", "cyan", "blue", "purple", "black"]);
-  const r = Math.random();
-  if (r < 0.08) opts.size = "big";
-  else if (r < 0.18) opts.size = "small";
-  const tr = Math.random();
-  if (tr < 0.03) opts.type = "ue";
-  else if (tr < 0.05) opts.type = "shita";
-  return spawn(pick(POOL), opts);
-}
-
-function wall() {
-  const w = pick(WALLS);
-  const n = Math.ceil(lanes.length * 0.6);
-  for (let i = 0; i < n; i++) setTimeout(() => spawn(w.text, { color: w.color }), i * rand(60, 140));
-}
-
-/* ---------------- side comment list ---------------- */
-const list = document.getElementById("list");
-const countEl = document.getElementById("count");
-const viewsEl = document.getElementById("views");
-let count = 93939;
-let views = 1039393;
-const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-const fakeDate = () => `08/${String(Math.ceil(rand(0, 12))).padStart(2, "0")}/${String(Math.ceil(rand(0, 28))).padStart(2, "0")} ${String(Math.floor(rand(0, 24))).padStart(2, "0")}:${String(Math.floor(rand(0, 60))).padStart(2, "0")}`;
-
-function addRow(c) {
-  count++;
-  countEl.textContent = count.toLocaleString();
-  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 30;
-  const row = document.createElement("div");
-  row.className = "row" + (c.mine ? " mine" : "");
-  const t = document.createElement("span"); t.className = "t"; t.textContent = fmt(playhead);
-  const m = document.createElement("span"); m.textContent = c.text; m.title = c.text;
-  const w = document.createElement("span"); w.className = "w"; w.textContent = c.mine ? "たった今" : fakeDate();
-  row.append(t, m, w);
-  list.append(row);
-  while (list.children.length > 200) list.firstChild.remove();
-  if (atBottom || c.mine) list.scrollTop = list.scrollHeight;
-}
-
-/* ---------------- controls ---------------- */
-const TOTAL = 219; // 3:39
-let playhead = 0;
-const playBtn = document.getElementById("play");
-const toggleBtn = document.getElementById("toggle");
-const seekFill = document.getElementById("seekFill");
-const seekKnob = document.getElementById("seekKnob");
-const curEl = document.getElementById("cur");
-const stage = document.getElementById("stage");
-
-playBtn.addEventListener("click", () => {
-  playing = !playing;
-  playBtn.textContent = playing ? "❚❚" : "▶";
-  stage.style.animationPlayState = playing ? "" : "paused";
-});
-toggleBtn.addEventListener("click", () => {
-  commentsOn = !commentsOn;
-  toggleBtn.setAttribute("aria-pressed", String(!commentsOn));
-  toggleBtn.textContent = commentsOn ? "コメント非表示" : "コメント表示";
-  document.querySelector(".ph-right b").textContent = commentsOn ? "ON" : "OFF";
-});
-
-document.getElementById("commentForm").addEventListener("submit", (e) => {
-  e.preventDefault();
-  const input = document.getElementById("commentInput");
-  const text = input.value.trim();
-  if (!text) return;
-  if (!commentsOn) toggleBtn.click();
-  spawn(text, { mine: true });
-  input.value = "";
-});
-
-// click your skin or your face for a little cheer
-function cheer() {
-  const cheers = ["かわいい！！", "emer3ldさーん！", "きゃーーー", "♡♡♡♡♡", "(*´ω｀*)", "もっと踊って！"];
-  for (let i = 0; i < 6; i++) setTimeout(() => spawn(pick(cheers), { color: pick(["pink", "yellow", "white", "cyan"]) }), i * 80);
-}
-document.getElementById("skin").addEventListener("click", cheer);
-document.getElementById("face").addEventListener("click", cheer);
-
-/* ---------------- loop ---------------- */
+/* =========================================================
+   main loop
+   ========================================================= */
 let last = performance.now();
-let nextSpawn = 0;
-let nextWall = performance.now() + rand(20000, 30000);
-let nextView = 0;
-
+let ready = false;
 function frame(t) {
-  const dt = Math.min(50, t - last);
-  last = t;
-  if (playing && commentsOn) {
-    if (t > nextSpawn) {
-      randomComment();
-      nextSpawn = t + (reduceMotion ? rand(1500, 2500) : rand(260, 720));
-    }
-    if (!reduceMotion && t > nextWall) {
-      wall();
-      nextWall = t + rand(35000, 55000);
-    }
-  }
-  if (playing) {
-    playhead = (playhead + dt / 1000) % TOTAL;
-    const p = (playhead / TOTAL) * 100;
-    seekFill.style.width = p + "%";
-    seekKnob.style.left = p + "%";
-    curEl.textContent = fmt(playhead);
-  }
-  if (t > nextView) {
-    views += Math.ceil(Math.random() * 2);
-    viewsEl.textContent = views.toLocaleString();
-    nextView = t + rand(1500, 4000);
-  }
-  update(dt);
-  draw();
-  drawDancer(dt);
+  tick(t);
   requestAnimationFrame(frame);
 }
+function tick(t) {
+  const dt = Math.min(50, t - last);
+  last = t;
+  // hold anywhere to warp
+  const targetWarp = holding && t - holdStart > 250 ? 6 : 1;
+  warp += (targetWarp - warp) * (1 - Math.exp(-dt * 0.004));
 
-fit();
-// start with some comments already on screen
-for (let i = 0; i < 12; i++) {
-  const c = randomComment();
-  if (c.type === "naka") c.x = rand(0, W);
+  drawStars(dt);
+  if (ready) {
+    updateHead(t, dt);
+    if (!reduceMotion && t > nextAuto) fireLasers();
+    drawGlyphs(t);
+    drawLasers(t, dt);
+  }
+  updateHud(t);
 }
+
+addEventListener("resize", () => {
+  W = innerWidth; H = innerHeight;
+  sctx = fit2d(starCanvas); hctx = fit2d(headCanvas); fctx = fit2d(fxCanvas);
+  layout();
+});
+
+layout();
 requestAnimationFrame(frame);
+loadSkin().then((img) => { buildHead(img); ready = true; });
