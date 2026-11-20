@@ -47,7 +47,7 @@ document.addEventListener("pointerleave", () => { pointer.active = false; holdin
 
 /* =========================================================
    0. nebula backdrop — deep navy, teal-green clouds, purple haze,
-      cyan glow, soft bokeh and a couple of far-off planets.
+      cyan glow and soft bokeh.
       painted once, then gently drifts + shifts with the cursor
    ========================================================= */
 const nebulaCanvas = document.getElementById("nebula");
@@ -64,26 +64,6 @@ function cloud(ctx, cx, cy, r, color, puffs, alpha) {
     g.addColorStop(1, `rgba(${color},0)`);
     ctx.fillStyle = g;
     ctx.fillRect(x - pr, y - pr, pr * 2, pr * 2);
-  }
-}
-
-function planet(ctx, x, y, r, light, dark, ring) {
-  ctx.globalCompositeOperation = "source-over";
-  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
-  g.addColorStop(0, light);
-  g.addColorStop(0.7, dark);
-  g.addColorStop(1, "rgba(5,7,26,1)");
-  ctx.fillStyle = g;
-  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  // rim light
-  ctx.globalCompositeOperation = "lighter";
-  ctx.strokeStyle = "rgba(140,230,255,0.25)";
-  ctx.lineWidth = Math.max(1, r * 0.06);
-  ctx.beginPath(); ctx.arc(x, y, r * 0.97, Math.PI * 0.9, Math.PI * 1.6); ctx.stroke();
-  if (ring) {
-    ctx.strokeStyle = "rgba(170,240,255,0.35)";
-    ctx.lineWidth = Math.max(1, r * 0.05);
-    ctx.beginPath(); ctx.ellipse(x, y, r * 2, r * 0.45, -0.35, 0, Math.PI * 2); ctx.stroke();
   }
 }
 
@@ -135,19 +115,6 @@ function paintNebula() {
     ctx.fillStyle = g;
     ctx.fillRect(x - r, y - r, r * 2, r * 2);
   }
-  // faint sweeping orbit lines
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = `rgba(160,230,255,${0.05 + i * 0.03})`;
-    ctx.beginPath();
-    ctx.ellipse(w * 0.5, h * 1.05, big * (0.55 + i * 0.09), big * (0.16 + i * 0.03), -0.18, Math.PI * 1.05, Math.PI * 1.95);
-    ctx.stroke();
-  }
-  // a couple of far-off planets, kept to the edges so the head stays the star
-  const pr = Math.min(w, h);
-  planet(ctx, w * 0.1, h * 0.3, pr * 0.07, "#6fc6d8", "#1d3f6e", true);
-  planet(ctx, w * 0.9, h * 0.62, pr * 0.045, "#b58ad8", "#3b2066", false);
-  planet(ctx, w * 0.78, h * 0.1, pr * 0.02, "#e8d27a", "#5a4a20", false);
   ctx.globalCompositeOperation = "source-over";
 }
 function pick3(a) { return a[Math.floor(Math.random() * a.length)]; }
