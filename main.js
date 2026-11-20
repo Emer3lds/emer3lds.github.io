@@ -46,6 +46,125 @@ addEventListener("pointerup", (e) => {
 document.addEventListener("pointerleave", () => { pointer.active = false; holding = false; });
 
 /* =========================================================
+   0. nebula backdrop — deep navy, teal-green clouds, purple haze,
+      cyan glow, soft bokeh and a couple of far-off planets.
+      painted once, then gently drifts + shifts with the cursor
+   ========================================================= */
+const nebulaCanvas = document.getElementById("nebula");
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+
+function cloud(ctx, cx, cy, r, color, puffs, alpha) {
+  // lots of faint overlapping puffs = soft, lumpy nebula
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < puffs; i++) {
+    const x = cx + gauss() * r, y = cy + gauss() * r * 0.75;
+    const pr = r * rand(0.12, 0.55);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, pr);
+    g.addColorStop(0, `rgba(${color},${alpha * rand(0.5, 1)})`);
+    g.addColorStop(1, `rgba(${color},0)`);
+    ctx.fillStyle = g;
+    ctx.fillRect(x - pr, y - pr, pr * 2, pr * 2);
+  }
+}
+
+function planet(ctx, x, y, r, light, dark, ring) {
+  ctx.globalCompositeOperation = "source-over";
+  const g = ctx.createRadialGradient(x - r * 0.35, y - r * 0.35, r * 0.1, x, y, r);
+  g.addColorStop(0, light);
+  g.addColorStop(0.7, dark);
+  g.addColorStop(1, "rgba(5,7,26,1)");
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  // rim light
+  ctx.globalCompositeOperation = "lighter";
+  ctx.strokeStyle = "rgba(140,230,255,0.25)";
+  ctx.lineWidth = Math.max(1, r * 0.06);
+  ctx.beginPath(); ctx.arc(x, y, r * 0.97, Math.PI * 0.9, Math.PI * 1.6); ctx.stroke();
+  if (ring) {
+    ctx.strokeStyle = "rgba(170,240,255,0.35)";
+    ctx.lineWidth = Math.max(1, r * 0.05);
+    ctx.beginPath(); ctx.ellipse(x, y, r * 2, r * 0.45, -0.35, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+
+function paintNebula() {
+  const w = Math.round(W * 1.08), h = Math.round(H * 1.08);
+  const scale = Math.min(DPR, 1.5);
+  nebulaCanvas.width = Math.round(w * scale);
+  nebulaCanvas.height = Math.round(h * scale);
+  const ctx = nebulaCanvas.getContext("2d");
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  const big = Math.max(w, h);
+
+  // deep navy base, a touch brighter toward the middle
+  const base = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, big * 0.75);
+  base.addColorStop(0, "#0e1440");
+  base.addColorStop(0.55, "#080c2a");
+  base.addColorStop(1, "#03040f");
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, w, h);
+
+  // nebula clouds
+  cloud(ctx, w * 0.22, h * 0.18, big * 0.32, "40,150,120", 70, 0.07);   // teal-green, top left
+  cloud(ctx, w * 0.45, h * 0.05, big * 0.22, "70,170,90", 40, 0.05);    // green wisps up top
+  cloud(ctx, w * 0.85, h * 0.78, big * 0.3, "110,60,180", 70, 0.07);    // purple haze, bottom right
+  cloud(ctx, w * 0.08, h * 0.72, big * 0.22, "60,70,190", 45, 0.06);    // deep blue, left
+  cloud(ctx, w * 0.78, h * 0.2, big * 0.2, "40,170,220", 40, 0.06);     // cyan glow, top right
+  cloud(ctx, w * 0.6, h * 0.95, big * 0.18, "200,70,170", 30, 0.04);    // hint of magenta
+  cloud(ctx, w * 0.5, h * 0.5, big * 0.28, "50,110,200", 40, 0.025);    // faint glow behind the head
+
+  // speckled star dust inside the green clouds
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 900; i++) {
+    const x = w * 0.22 + gauss() * big * 0.3, y = h * 0.16 + gauss() * big * 0.2;
+    ctx.fillStyle = `rgba(${pick3(["150,255,200", "200,255,230", "120,220,255"])},${rand(0.08, 0.4)})`;
+    ctx.fillRect(x, y, rand(0.6, 1.8), rand(0.6, 1.8));
+  }
+  // distant pinpoint stars everywhere
+  for (let i = 0; i < (w * h) / 1800; i++) {
+    ctx.fillStyle = `rgba(${pick3(["255,255,255", "190,230,255", "255,220,250"])},${rand(0.15, 0.8)})`;
+    const s = Math.random() < 0.97 ? rand(0.5, 1.3) : rand(1.5, 2.4);
+    ctx.fillRect(rand(0, w), rand(0, h), s, s);
+  }
+  // soft bokeh glows
+  for (let i = 0; i < 26; i++) {
+    const x = rand(0, w), y = rand(0, h), r = rand(3, 14);
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(${pick3(["210,250,255", "170,255,220", "230,200,255"])},${rand(0.25, 0.6)})`);
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  // faint sweeping orbit lines
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    ctx.strokeStyle = `rgba(160,230,255,${0.05 + i * 0.03})`;
+    ctx.beginPath();
+    ctx.ellipse(w * 0.5, h * 1.05, big * (0.55 + i * 0.09), big * (0.16 + i * 0.03), -0.18, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.stroke();
+  }
+  // a couple of far-off planets, kept to the edges so the head stays the star
+  const pr = Math.min(w, h);
+  planet(ctx, w * 0.1, h * 0.3, pr * 0.07, "#6fc6d8", "#1d3f6e", true);
+  planet(ctx, w * 0.9, h * 0.62, pr * 0.045, "#b58ad8", "#3b2066", false);
+  planet(ctx, w * 0.78, h * 0.1, pr * 0.02, "#e8d27a", "#5a4a20", false);
+  ctx.globalCompositeOperation = "source-over";
+}
+function pick3(a) { return a[Math.floor(Math.random() * a.length)]; }
+
+// slow drift + a little parallax away from the cursor
+const neb = { x: 0, y: 0 };
+function moveNebula(t) {
+  const tx = pointer.active ? -((pointer.x / W) * 2 - 1) * W * 0.015 : 0;
+  const ty = pointer.active ? -((pointer.y / H) * 2 - 1) * H * 0.015 : 0;
+  neb.x += (tx - neb.x) * 0.04;
+  neb.y += (ty - neb.y) * 0.04;
+  const drift = reduceMotion ? 0 : Math.sin(t * 0.00008) * W * 0.01;
+  const zoom = 1 + (warp - 1) * 0.008; // pushes in a touch while warping
+  nebulaCanvas.style.transform = `translate(${neb.x + drift}px, ${neb.y}px) scale(${zoom})`;
+}
+
+/* =========================================================
    1. stars rushing past
    ========================================================= */
 const starCanvas = document.getElementById("stars");
@@ -56,13 +175,16 @@ function newStar(anyDepth) {
   return {
     x: rand(-1, 1), y: rand(-1, 1),
     z: anyDepth ? rand(0.05, 1) : 1,
-    hue: Math.random() < 0.2 ? null : rand(0, 360), // some are white
+    // some are white, the rest lean teal / cyan / violet / pink / a little gold
+    hue: Math.random() < 0.25 ? null : [165, 185, 200, 260, 285, 320, 45][Math.floor(Math.random() * 7)] + rand(-12, 12),
     size: rand(0.6, 1.6),
   };
 }
 function drawStars(dt) {
   const ctx = sctx;
-  ctx.fillStyle = "rgba(7, 6, 10, 0.55)"; // slight trails
+  // fade the previous frame out (leaves short trails) so the nebula shows through
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
   ctx.fillRect(0, 0, W, H);
   const cx = W / 2, cy = H / 2, f = Math.max(W, H) * 0.5;
   const speed = (reduceMotion ? 0.00004 : 0.00016) * warp;
@@ -388,6 +510,7 @@ function tick(t) {
   const targetWarp = holding && t - holdStart > 250 ? 6 : 1;
   warp += (targetWarp - warp) * (1 - Math.exp(-dt * 0.004));
 
+  moveNebula(t);
   drawStars(dt);
   if (ready) {
     updateHead(t, dt);
@@ -402,8 +525,12 @@ addEventListener("resize", () => {
   W = innerWidth; H = innerHeight;
   sctx = fit2d(starCanvas); hctx = fit2d(headCanvas); fctx = fit2d(fxCanvas);
   layout();
+  clearTimeout(nebulaTimer);
+  nebulaTimer = setTimeout(paintNebula, 150);
 });
+let nebulaTimer;
 
+paintNebula();
 layout();
 requestAnimationFrame(frame);
 loadSkin().then((img) => { buildHead(img); ready = true; });

@@ -1,5 +1,5 @@
 :root {
-  --bg: #07060a;
+  --bg: #05071a;
   --fg: #f4f1ff;
   --dim: #8d88a3;
   --mono: "Space Mono", ui-monospace, "Consolas", monospace;
@@ -18,6 +18,13 @@ body {
 }
 
 canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; }
+#nebula {
+  z-index: 0;
+  /* a bit oversized so it can drift and shift with the cursor without showing edges */
+  inset: -4%;
+  width: 108vw; height: 108vh;
+  will-change: transform;
+}
 #stars { z-index: 0; }
 #head { z-index: 1; }
 #fx { z-index: 2; pointer-events: none; }
@@ -28,7 +35,7 @@ body::after {
   position: fixed; inset: 0;
   pointer-events: none;
   z-index: 3;
-  background: radial-gradient(ellipse at center, transparent 55%, rgba(0, 0, 0, .55));
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(2, 3, 14, .6));
 }
 
 .hud {
