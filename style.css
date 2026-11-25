@@ -1,8 +1,14 @@
+@font-face {
+  font-family: "Monocraft";
+  src: url("https://cdn.jsdelivr.net/gh/IdreesInc/Monocraft@main/dist/Monocraft-otf/Monocraft.otf") format("opentype");
+  font-display: swap;
+}
+
 :root {
   --bg: #05071a;
   --fg: #f4f1ff;
   --dim: #8d88a3;
-  --mono: "Space Mono", ui-monospace, "Consolas", monospace;
+  --mono: "Monocraft", "Space Mono", ui-monospace, "Consolas", monospace;
 }
 
 * { box-sizing: border-box; }
